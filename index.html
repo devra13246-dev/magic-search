@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>אפליקציית זיהוי קולי נקי</title>
+    
+    <!-- הוספת תמיכה באפליקציית PWA -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#121212">
+
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: Arial, sans-serif;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body, html {
+            width: 100%;
+            height: 100%;
+            background-color: #121212;
+            overflow: hidden;
+        }
+
+        /* מסך ראשי */
+        #main-screen {
+            width: 100vw;
+            height: 100vh;
+            background-color: #121212;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            position: relative;
+            color: white;
+        }
+
+        /* טקסט למעלה */
+        #top-text {
+            position: absolute;
+            top: 25vh;
+            font-size: 20px;
+            text-align: center;
+            padding: 0 20px;
+        }
+
+        /* עיצוב התמונה שתופיע במסך */
+        .app-logo {
+            width: 100px;
+            height: 100px;
+            margin-bottom: 20px;
+            object-fit: contain;
+        }
+
+        /* כפתור התחלה לבן */
+        #start-btn {
+            padding: 14px 45px;
+            font-size: 22px;
+            background-color: #ffffff;
+            color: #000000;
+            border: none;
+            border-radius: 12px;
+            cursor: pointer;
+            font-weight: bold;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+        }
+
+        #start-btn:active {
+            background-color: #e0e0e0;
+        }
+
+        /* תפריט נפתח (Select) מתחת לכפתור ההתחלה */
+        #options-box {
+            margin-top: 20px;
+        }
+
+        #target-select {
+            background-color: #ffffff;
+            color: #000000;
+            padding: 10px 15px;
+            font-size: 16px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            outline: none;
+            font-weight: bold;
+        }
+
+        /* מסך שחור מלא אמיתי */
+        #black-screen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background-color: #000000;
+            display: none;
+            cursor: pointer;
+            z-index: 9999;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- מסך ראשי -->
+    <div id="main-screen">
+        <div id="top-text">אנא לחץ כדי לעשות מסך מלא ולהפעיל את האפליקציה</div>
+
+        <!-- ========================================== -->
+        <!-- כאן הוספתי את שורת התמונה (הלוגו) שלך: -->
+        <img src="logo.png" class="app-logo" alt="לוגו">
+        <!-- ========================================== -->
+
+        <button id="start-btn" onclick="startApp()">התחל</button>
+
+        <!-- תפריט בחירה מתחת לכפתור ההתחלה -->
+        <div id="options-box">
+            <select id="target-select">
+                <option value="google">Google</option>
+                <option value="spotify">Spotify</option>
+            </select>
+        </div>
+    </div>
+
+    <!-- מסך שחור מלא אמיתי -->
+    <div id="black-screen" onclick="handleBlackScreenClick()"></div>
+
+    <script>
+        let selectedService = 'google';
+        let clickCount = 0;
+        let isRecording = false;
+        let recognition;
+        let finalSearchTerm = '';
+        let accumulatedTranscript = '';
+
+        // מאגר נתונים מקיף
+        const categoriesDatabase = {
+            "אנשים ומפורסמים ודמויות": [
+                "סופרמן", "באטמן", "ספיידרמן", "איירון מן", "דה רוק", "דוויין ג'ונסון", 
+                "טראויס סקוט", "מיקי מאוס", "ביבי נתניהו", "בנימין נתניהו", "אילון מאסק", "דיוויד בליין", 
+                "אלברט איינשטיין", "נועה קירל", "ליאונל מסי", "אייל גולן", "עומר אדם", "כריסטיאנו רונאלדו"
+            ],
+            "מדינות": [
+                "ארצות הברית", "דרום אפריקה", "הממלכה המאוחדת", "ישראל", 
+                "צרפת", "אנגליה", "איטליה", "ספרד", "יפן", "גרמניה", "יוון"
+            ],
+            "ערים": [
+                "תל אביב", "באר שבע", "פתח תקווה", "ראשון לציון", 
+                "ירושלים", "חיפה", "אילת", "לונדון", "פריז", "ניו יורק", "טוקיו"
+            ],
+            "מקומות": [
+                "בית ספר", "ים המלח", "הכותל המערבי", "מגדלי עזריאלי", 
+                "נתבג", "חרמון", "כנרת", "פארק הירקון"
+            ],
+            "ארגונים": [
+                "משרד החינוך", "המוסד למודיעין", "צהל", "משטרת ישראל", 
+                "גוגל", "אפל", "מיקרוסופט", "הכנסת"
+            ],
+            "חיות": [
+                "דוב קוטב", "נמר שלג", "כלב בית", "חתול רחוב", 
+                "אריה", "פיל", "קוף", "סוס", "ציפור", "דג"
+            ],
+            "אוכל": [
+                "פיצה", "המבורגר", "שווארמה", "פלאפל", "חומוס", "סושי", 
+                "פסטה", "שוקולד", "גלידה", "שניצל", "בורקס", "מלבי"
+            ],
+            "חפצים": [
+                "טלפון נייד", "מחשב נייד", "שולחן כתיבה", "תיק גב", 
+                "ביסלי", "במבה", "כיסא", "עט", "ספר", "שעון"
+            ]
+        };
+
+        function initSpeechRecognition() {
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            if (!SpeechRecognition) {
+                alert("הדפדפן שלך אינו תומך בזיהוי קולי. מומלץ להשתמש ב-Chrome.");
+                return;
+            }
+
+            recognition = new SpeechRecognition();
+            recognition.lang = 'he-IL';
+            recognition.interimResults = true;
+            recognition.continuous = true;
+
+            recognition.onresult = function(event) {
+                let currentSessionText = '';
+                for (let i = event.resultIndex; i < event.results.length; ++i) {
+                    currentSessionText += event.results[i][0].transcript;
+                }
+                accumulatedTranscript = currentSessionText.trim();
+                console.log("הקלטה רציפה:", accumulatedTranscript);
+            };
+
+            recognition.onend = function() {
+                if (isRecording) {
+                    try {
+                        recognition.start();
+                    } catch(e) {}
+                }
+            };
+        }
+
+        function extractTargetWord(transcript) {
+            let wordsArr = transcript.split(" ");
+            let cleanWords = [];
+            for (let i = 0; i < wordsArr.length; i++) {
+                if (wordsArr[i] !== wordsArr[i + 1]) {
+                    cleanWords.push(wordsArr[i]);
+                }
+            }
+            let uniqueTranscript = cleanWords.join(" ");
+
+            let allTerms = [];
+            for (let category in categoriesDatabase) {
+                allTerms.push(...categoriesDatabase[category]);
+            }
+
+            allTerms.sort((a, b) => b.length - a.length);
+
+            for (let term of allTerms) {
+                if (uniqueTranscript.includes(term)) {
+                    return term;
+                }
+            }
+
+            const fillerWords = [
+                "אז", "חשבת", "חושב", "חוסב", "על", "המילה", "הוא", "היא", "אני", "תחפש", "בבקשה", 
+                "זה", "כמו", "הם", "אתה", "את", "השם", "הגיבור", "לא", "השפעתי", "לך", "כלום", 
+                "נכון", "אמרתי", "משפט", "ואז", "אחרי", "שנייה", "שואל", "שרושם", "ורשם",
+                "אם", "כן", "אולי", "או", "גם", "שזה", "ועוד", "כי", "מה", "מי"
+            ];
+
+            let filteredWords = cleanWords.filter(word => {
+                let strippedWord = word.replace(/^[והכלשמןבת]/, '');
+                return !fillerWords.includes(word) && !fillerWords.includes(strippedWord) && word.trim() !== "";
+            });
+
+            if (filteredWords.length > 0) {
+                return filteredWords.slice(0, 2).join(" ");
+            }
+
+            return "ישראל";
+        }
+
+        function startApp() {
+            selectedService = document.getElementById('target-select').value;
+
+            document.getElementById('main-screen').style.display = 'none';
+            const blackScreen = document.getElementById('black-screen');
+            blackScreen.style.display = 'block';
+
+            if (blackScreen.requestFullscreen) {
+                blackScreen.requestFullscreen();
+            } else if (blackScreen.webkitRequestFullscreen) {
+                blackScreen.webkitRequestFullscreen();
+            }
+
+            initSpeechRecognition();
+        }
+
+        function handleBlackScreenClick() {
+            clickCount++;
+
+            if (clickCount === 1) {
+                isRecording, isRecording = true;
+                accumulatedTranscript = '';
+                if (recognition) {
+                    try {
+                        recognition.start();
+                    } catch(e) {
+                        console.log(e);
+                    }
+                }
+            } 
+            else if (clickCount === 2) {
+                isRecording = false;
+                if (recognition) {
+                    try {
+                        recognition.stop();
+                    } catch(e) {
+                        console.log(e);
+                    }
+                }
+
+                finalSearchTerm = extractTargetWord(accumulatedTranscript);
+                console.log("המושג הנקי הסופי שיועבר לחיפוש:", finalSearchTerm);
+            } 
+            else if (clickCount >= 4 && finalSearchTerm) {
+                let targetUrl = '';
+                if (selectedService === 'google') {
+                    targetUrl = `https://www.google.com/search?q=${encodeURIComponent(finalSearchTerm)}`;
+                } else {
+                    targetUrl = `https://open.spotify.com/search/${encodeURIComponent(finalStringTerm || finalSearchTerm)}`;
+                }
+                window.location.href = targetUrl;
+            }
+        }
+    </script>
+</body>
+</html>
